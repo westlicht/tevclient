@@ -348,10 +348,10 @@ namespace tevclient
 
     static std::atomic<uint32_t> sInstanceCount{0};
 
-    class Ipc
+    class Client::Impl
     {
     public:
-        Ipc(const char *hostname, uint16_t port) : mHostname{hostname}, mPort{std::to_string(port)}
+        Impl(const char *hostname, uint16_t port) : mHostname{hostname}, mPort{std::to_string(port)}
         {
             if (sInstanceCount++ == 0)
             {
@@ -369,7 +369,7 @@ namespace tevclient
             }
         }
 
-        ~Ipc()
+        ~Impl()
         {
             disconnect();
 
@@ -481,48 +481,48 @@ namespace tevclient
 
     Client::Client(const char *hostname, uint16_t port)
     {
-        mIpc = new Ipc(hostname, port);
+        mImpl = new Client::Impl(hostname, port);
     }
 
     Client::~Client()
     {
-        delete mIpc;
+        delete mImpl;
     }
 
     Error Client::openImage(const std::string &imagePath, const std::string &channelSelector, bool grabFocus)
     {
         IpcPacket packet;
         packet.setOpenImage(imagePath, channelSelector, grabFocus);
-        return mIpc->send(packet);
+        return mImpl->send(packet);
     }
 
     Error Client::reloadImage(const std::string &imageName, bool grabFocus)
     {
         IpcPacket packet;
         packet.setReloadImage(imageName, grabFocus);
-        return mIpc->send(packet);
+        return mImpl->send(packet);
     }
 
     Error Client::closeImage(const std::string &imageName)
     {
         IpcPacket packet;
         packet.setCloseImage(imageName);
-        return mIpc->send(packet);
+        return mImpl->send(packet);
     }
 
     Error Client::createImage(const std::string &imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus)
     {
         if (width == 0 || height == 0)
         {
-            return mIpc->setLastError(Error::ImageError, "Image width and height must be greater than 0.");
+            return mImpl->setLastError(Error::ImageError, "Image width and height must be greater than 0.");
         }
         if (channelNames.empty())
         {
-            return mIpc->setLastError(Error::ImageError, "Image must have at least one channel.");
+            return mImpl->setLastError(Error::ImageError, "Image must have at least one channel.");
         }
         IpcPacket packet;
         packet.setCreateImage(imageName, grabFocus, width, height, (int32_t)channelNames.size(), channelNames);
-        return mIpc->send(packet);
+        return mImpl->send(packet);
     }
 
     Error Client::createImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus)
@@ -543,7 +543,7 @@ namespace tevclient
             channelNames = {"R", "G", "B", "A"};
             break;
         default:
-            return mIpc->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
+            return mImpl->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
         }
         return createImage(imageName, width, height, channelNames, grabFocus);
     }
@@ -562,7 +562,7 @@ namespace tevclient
     {
         IpcPacket packet;
         packet.setUpdateImage(imageName, grabFocus, channelDescs, x, y, width, height, imageData, imageDataLength);
-        return mIpc->send(packet);
+        return mImpl->send(packet);
     }
 
     Error Client::updateImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
@@ -583,16 +583,16 @@ namespace tevclient
             channelDescs = {{"R", 0, 4}, {"G", 1, 4}, {"B", 2, 4}, {"A", 3, 4}};
             break;
         default:
-            return mIpc->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
+            return mImpl->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
         }
         return updateImage(imageName, 0, 0, width, height, channelDescs, imageData, imageDataLength);
     }
 
-    Error Client::lastError() const { return mIpc->lastError(); }
+    Error Client::lastError() const { return mImpl->lastError(); }
 
     const std::string &Client::lastErrorString() const
     {
-        return mIpc->lastErrorString();
+        return mImpl->lastErrorString();
     }
 
 } // namespace tevclient

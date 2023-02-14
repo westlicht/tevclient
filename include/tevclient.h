@@ -170,8 +170,6 @@ namespace tevclient
         int64_t stride;
     };
 
-    class Ipc;
-
     enum class Error
     {
         Ok,
@@ -184,6 +182,11 @@ namespace tevclient
     public:
         Client(const char *hostname = "127.0.0.1", uint16_t port = 14158);
         ~Client();
+
+        Client(const Client &) = delete;
+        Client(Client &&) = delete;
+        Client &operator=(const Client &) = delete;
+        Client &operator=(Client &&) = delete;
 
         Error openImage(const std::string &imagePath, const std::string &channelSelector = "", bool grabFocus = true);
         Error reloadImage(const std::string &imageName, bool grabFocus = true);
@@ -200,7 +203,8 @@ namespace tevclient
         const std::string &lastErrorString() const;
 
     private:
-        Ipc *mIpc;
+        class Impl;
+        Impl *mImpl;
     };
 
 } // namespace tevclient
