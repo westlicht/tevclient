@@ -8,7 +8,7 @@ on:
 
 jobs:
   job:
-    name: ${{ matrix.name }} (${{ matrix.preset}} - ${{ matrix.config }})
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.config }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -17,13 +17,10 @@ jobs:
         config: [Debug, Release]
         include:
           - os: windows-latest
-            name: Windows
             compiler: msvc
           - os: ubuntu-latest
-            name: Linux
             compiler: gcc
           - os: macos-latest
-            name: macOS
             compiler: clang
 
     steps:
