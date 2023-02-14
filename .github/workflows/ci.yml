@@ -1,0 +1,46 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  release:
+
+jobs:
+  job:
+    name: ${{ matrix.name }} (${{ matrix.preset}} - ${{ matrix.config }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        config: [Debug, Release]
+        include:
+          - os: windows-latest
+            name: Windows
+            compiler: msvc
+          - os: ubuntu-latest
+            name: Linux
+            compiler: gcc
+          - os: macos-latest
+            name: macOS
+            compiler: clang
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      # Fetch latest cmake + ninja.
+      - uses: lukka/get-cmake@latest
+
+      # Fetch visual studio.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+
+      - name: Build
+        run: |
+          cmake --build build
