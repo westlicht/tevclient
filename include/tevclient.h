@@ -120,7 +120,7 @@ namespace tevclient
     {
         Ok,
         SocketError,
-        ImageError,
+        ArgumentError,
     };
 
     class Client

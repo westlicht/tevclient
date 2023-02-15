@@ -1,6 +1,5 @@
 #include "tevclient.h"
 
-#include <stdexcept>
 #include <string>
 #include <algorithm>
 #include <atomic>
@@ -25,6 +24,10 @@ using socket_t = int;
 #define SOCKET_ERROR (-1)
 #define INVALID_SOCKET (-1)
 #endif
+
+#define RETURN_IF_FAILED(call) \
+    if (tevclient::Error error = call; error != tevclient::Error::Ok) \
+        return error;
 
 namespace tevclient
 {
@@ -81,279 +84,72 @@ namespace tevclient
 #endif
     }
 
-    class IpcPacket
+    enum EPacketType : char
+    {
+        OpenImage = 0,
+        ReloadImage = 1,
+        CloseImage = 2,
+        UpdateImage = 3,
+        CreateImage = 4,
+        UpdateImageV2 = 5, // Adds multi-channel support
+        UpdateImageV3 = 6, // Adds custom striding/offset support
+        OpenImageV2 = 7,   // Explicit separation of image name and channel selector
+        VectorGraphics = 8,
+    };
+
+    class OStream
     {
     public:
-        enum EType : char
+        template <typename T>
+        OStream &operator<<(const std::vector<T> &var)
         {
-            OpenImage = 0,
-            ReloadImage = 1,
-            CloseImage = 2,
-            UpdateImage = 3,
-            CreateImage = 4,
-            UpdateImageV2 = 5, // Adds multi-channel support
-            UpdateImageV3 = 6, // Adds custom striding/offset support
-            OpenImageV2 = 7,   // Explicit separation of image name and channel selector
-            VectorGraphics = 8,
-        };
-
-        IpcPacket() = default;
-        IpcPacket(const char *data, size_t length)
-        {
-            if (length <= 0)
+            for (auto &&elem : var)
             {
-                throw std::runtime_error{"Cannot construct an IPC packet from no data."};
+                *this << elem;
             }
-            mPayload.assign(data, data + length);
+            return *this;
         }
 
-        const char *data() const
+        OStream &operator<<(const std::string &var)
         {
-            return mPayload.data();
+            for (auto &&character : var)
+            {
+                *this << character;
+            }
+            *this << '\0';
+            return *this;
         }
 
-        size_t size() const
+        OStream &operator<<(std::string_view var)
         {
-            return mPayload.size();
+            for (auto &&character : var)
+            {
+                *this << character;
+            }
+            *this << '\0';
+            return *this;
         }
 
-        EType type() const
+        OStream &operator<<(bool var)
         {
-            // The first 4 bytes encode the message size.
-            return (EType)mPayload[4];
+            *this << char(var ? 0 : 1);
+            return *this;
         }
 
-        void setOpenImage(std::string_view imagePath, std::string_view channelSelector, bool grabFocus)
+        template <typename T>
+        OStream &operator<<(T var)
         {
-            OStream payload{mPayload};
-            payload << EType::OpenImageV2;
-            payload << grabFocus;
-            payload << imagePath;
-            payload << channelSelector;
+            size_t pos = mData.size();
+            mData.resize(mData.size() + sizeof(T));
+            *(T *)&mData[pos] = var;
+            return *this;
         }
 
-        void setReloadImage(std::string_view imageName, bool grabFocus)
-        {
-            OStream payload{mPayload};
-            payload << EType::ReloadImage;
-            payload << grabFocus;
-            payload << imageName;
-        }
-
-        void setCloseImage(std::string_view imageName)
-        {
-            OStream payload{mPayload};
-            payload << EType::CloseImage;
-            payload << imageName;
-        }
-
-        void setUpdateImage(std::string_view imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<float> &stridedImageData)
-        {
-            if (channelDescs.empty())
-            {
-                throw std::runtime_error{"UpdateImage IPC packet must have a non-zero channel count."};
-            }
-
-            int32_t nChannels = (int32_t)channelDescs.size();
-            std::vector<std::string> channelNames(nChannels);
-            std::vector<int64_t> channelOffsets(nChannels);
-            std::vector<int64_t> channelStrides(nChannels);
-
-            for (int32_t i = 0; i < nChannels; ++i)
-            {
-                channelNames[i] = channelDescs[i].name;
-                channelOffsets[i] = channelDescs[i].offset;
-                channelStrides[i] = channelDescs[i].stride;
-            }
-
-            OStream payload{mPayload};
-            payload << EType::UpdateImageV3;
-            payload << grabFocus;
-            payload << imageName;
-            payload << nChannels;
-            payload << channelNames;
-            payload << x << y << width << height;
-            payload << channelOffsets;
-            payload << channelStrides;
-
-            size_t nPixels = width * height;
-
-            size_t stridedImageDataSize = 0;
-            for (int32_t c = 0; c < nChannels; ++c)
-            {
-                stridedImageDataSize = std::max(stridedImageDataSize, (size_t)(channelOffsets[c] + (nPixels - 1) * channelStrides[c] + 1));
-            }
-
-            if (stridedImageData.size() != stridedImageDataSize)
-            {
-                throw std::runtime_error{"UpdateImage IPC packet's data size does not match specified dimensions, offset, and stride. (Expected: " + std::to_string(stridedImageDataSize) + ")"};
-            }
-
-            payload << stridedImageData;
-        }
-
-        void setUpdateImage(std::string_view imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const float *imageData, size_t imageDataLength)
-        {
-            if (channelDescs.empty())
-            {
-                throw std::runtime_error{"UpdateImage IPC packet must have a non-zero channel count."};
-            }
-
-            int32_t nChannels = (int32_t)channelDescs.size();
-            std::vector<std::string> channelNames(nChannels);
-            std::vector<int64_t> channelOffsets(nChannels);
-            std::vector<int64_t> channelStrides(nChannels);
-
-            for (int32_t i = 0; i < nChannels; ++i)
-            {
-                channelNames[i] = channelDescs[i].name;
-                channelOffsets[i] = channelDescs[i].offset;
-                channelStrides[i] = channelDescs[i].stride;
-            }
-
-            OStream payload{mPayload};
-            payload << EType::UpdateImageV3;
-            payload << grabFocus;
-            payload << imageName;
-            payload << nChannels;
-            payload << channelNames;
-            payload << x << y << width << height;
-            payload << channelOffsets;
-            payload << channelStrides;
-
-            size_t nPixels = width * height;
-
-            size_t stridedImageDataSize = 0;
-            for (int32_t c = 0; c < nChannels; ++c)
-            {
-                stridedImageDataSize = std::max(stridedImageDataSize, (size_t)(channelOffsets[c] + (nPixels - 1) * channelStrides[c] + 1));
-            }
-
-            if (imageDataLength != stridedImageDataSize)
-            {
-                throw std::runtime_error{"UpdateImage IPC packet's data size does not match specified dimensions, offset, and stride. (Expected: " + std::to_string(stridedImageDataSize) + ")"};
-            }
-
-            payload.write(imageData, imageDataLength * sizeof(float));
-        }
-
-        void setCreateImage(std::string_view imageName, bool grabFocus, int32_t width, int32_t height, int32_t nChannels, const std::vector<std::string> &channelNames)
-        {
-            if ((int32_t)channelNames.size() != nChannels)
-            {
-                throw std::runtime_error{"CreateImage IPC packet's channel names size does not match number of channels."};
-            }
-
-            OStream payload{mPayload};
-            payload << EType::CreateImage;
-            payload << grabFocus;
-            payload << imageName;
-            payload << width << height;
-            payload << nChannels;
-            payload << channelNames;
-        }
-
-        void setVectorGraphics(std::string_view imageName, bool grabFocus, bool append, const VgCommand *commands, size_t commandCount)
-        {
-            OStream payload{mPayload};
-            payload << EType::VectorGraphics;
-            payload << grabFocus;
-            payload << imageName;
-            payload << append;
-            payload << (int32_t)commandCount;
-            for (size_t i = 0; i < commandCount; ++i)
-            {
-                payload << commands[i].type;
-                payload << commands[i].data;
-            }
-        }
+        const void *data() const { return mData.data(); }
+        size_t size() const { return mData.size(); }
 
     private:
-        std::vector<char> mPayload;
-
-        class OStream
-        {
-        public:
-            OStream(std::vector<char> &data) : mData{data}
-            {
-                // Reserve space for an integer denoting the size of the packet.
-                *this << (uint32_t)0;
-            }
-
-            template <typename T>
-            OStream &operator<<(const std::vector<T> &var)
-            {
-                for (auto &&elem : var)
-                {
-                    *this << elem;
-                }
-                return *this;
-            }
-
-            OStream &operator<<(const std::string &var)
-            {
-                for (auto &&character : var)
-                {
-                    *this << character;
-                }
-                *this << '\0';
-                return *this;
-            }
-
-            OStream &operator<<(std::string_view var)
-            {
-                for (auto &&character : var)
-                {
-                    *this << character;
-                }
-                *this << '\0';
-                return *this;
-            }
-
-            OStream &operator<<(bool var)
-            {
-                if (mData.size() < mIdx + 1)
-                {
-                    mData.resize(mIdx + 1);
-                }
-
-                mData[mIdx] = var ? 1 : 0;
-                ++mIdx;
-                updateSize();
-                return *this;
-            }
-
-            template <typename T>
-            OStream &operator<<(T var)
-            {
-                if (mData.size() < mIdx + sizeof(T))
-                {
-                    mData.resize(mIdx + sizeof(T));
-                }
-
-                *(T *)&mData[mIdx] = var;
-                mIdx += sizeof(T);
-                updateSize();
-                return *this;
-            }
-
-            void write(const void *data, size_t len)
-            {
-                mData.resize(mIdx + len);
-                std::memcpy(&mData[mIdx], data, len);
-                mIdx += len;
-                updateSize();
-            }
-
-        private:
-            void updateSize()
-            {
-                *((uint32_t *)mData.data()) = (uint32_t)mIdx;
-            }
-
-            std::vector<char> &mData;
-            size_t mIdx = 0;
-        };
+        std::vector<uint8_t> mData;
     };
 
     static std::atomic<uint32_t> sInstanceCount{0};
@@ -391,7 +187,7 @@ namespace tevclient
             }
         }
 
-        Error send(const IpcPacket &message)
+        Error send(const void *data, size_t len)
         {
             if (!connected())
             {
@@ -402,12 +198,22 @@ namespace tevclient
                 }
             }
 
-            int bytesSent = ::send(mSocketFd, message.data(), (int)message.size(), 0 /* flags */);
-            if (bytesSent != int(message.size()))
+            size_t bytesSent = ::send(mSocketFd, reinterpret_cast<const char *>(data), static_cast<int>(len), 0 /* flags */);
+            if (bytesSent != len)
             {
                 return setLastError(Error::SocketError, "socket send() failed: " + errorString(lastSocketError()));
             }
 
+            return Error::Ok;
+        }
+
+        Error sendMessage(const OStream &header, const void *extraData = nullptr, size_t extraLen = 0)
+        {
+            uint32_t totalLen = static_cast<uint32_t>(4 + header.size() + extraLen);
+            RETURN_IF_FAILED(send(&totalLen, 4));
+            RETURN_IF_FAILED(send(header.data(), header.size()));
+            if (extraData)
+                RETURN_IF_FAILED(send(extraData, extraLen));
             return Error::Ok;
         }
 
@@ -501,38 +307,50 @@ namespace tevclient
 
     Error Client::openImage(std::string_view imagePath, std::string_view channelSelector, bool grabFocus)
     {
-        IpcPacket packet;
-        packet.setOpenImage(imagePath, channelSelector, grabFocus);
-        return mImpl->send(packet);
+        OStream msg;
+        msg << EPacketType::OpenImageV2;
+        msg << grabFocus;
+        msg << imagePath;
+        msg << channelSelector;
+        return mImpl->sendMessage(msg);
     }
 
     Error Client::reloadImage(std::string_view imageName, bool grabFocus)
     {
-        IpcPacket packet;
-        packet.setReloadImage(imageName, grabFocus);
-        return mImpl->send(packet);
+        OStream msg;
+        msg << EPacketType::ReloadImage;
+        msg << grabFocus;
+        msg << imageName;
+        return mImpl->sendMessage(msg);
     }
 
     Error Client::closeImage(std::string_view imageName)
     {
-        IpcPacket packet;
-        packet.setCloseImage(imageName);
-        return mImpl->send(packet);
+        OStream msg;
+        msg << EPacketType::CloseImage;
+        msg << imageName;
+        return mImpl->sendMessage(msg);
     }
 
     Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus)
     {
         if (width == 0 || height == 0)
         {
-            return mImpl->setLastError(Error::ImageError, "Image width and height must be greater than 0.");
+            return mImpl->setLastError(Error::ArgumentError, "Image width and height must be greater than 0.");
         }
         if (channelNames.empty())
         {
-            return mImpl->setLastError(Error::ImageError, "Image must have at least one channel.");
+            return mImpl->setLastError(Error::ArgumentError, "Image must have at least one channel.");
         }
-        IpcPacket packet;
-        packet.setCreateImage(imageName, grabFocus, width, height, (int32_t)channelNames.size(), channelNames);
-        return mImpl->send(packet);
+
+        OStream msg;
+        msg << EPacketType::CreateImage;
+        msg << grabFocus;
+        msg << imageName;
+        msg << width << height;
+        msg << static_cast<uint32_t>(channelNames.size());
+        msg << channelNames;
+        return mImpl->sendMessage(msg);
     }
 
     Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus)
@@ -553,7 +371,7 @@ namespace tevclient
             channelNames = {"R", "G", "B", "A"};
             break;
         default:
-            return mImpl->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
+            return mImpl->setLastError(Error::ArgumentError, "Image must have between 1 and 4 channels.");
         }
         return createImage(imageName, width, height, channelNames, grabFocus);
     }
@@ -570,9 +388,47 @@ namespace tevclient
 
     Error Client::updateImage(std::string_view imageName, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength, bool grabFocus)
     {
-        IpcPacket packet;
-        packet.setUpdateImage(imageName, grabFocus, channelDescs, x, y, width, height, imageData, imageDataLength);
-        return mImpl->send(packet);
+        if (channelDescs.empty())
+        {
+            return mImpl->setLastError(Error::ArgumentError, "Image must have at least one channel.");
+        }
+
+        uint32_t channelCount = static_cast<uint32_t>(channelDescs.size());
+        std::vector<std::string> channelNames(channelCount);
+        std::vector<int64_t> channelOffsets(channelCount);
+        std::vector<int64_t> channelStrides(channelCount);
+
+        for (uint32_t i = 0; i < channelCount; ++i)
+        {
+            channelNames[i] = channelDescs[i].name;
+            channelOffsets[i] = channelDescs[i].offset;
+            channelStrides[i] = channelDescs[i].stride;
+        }
+
+        OStream msg;
+        msg << EPacketType::UpdateImageV3;
+        msg << grabFocus;
+        msg << imageName;
+        msg << channelCount;
+        msg << channelNames;
+        msg << x << y << width << height;
+        msg << channelOffsets;
+        msg << channelStrides;
+
+        size_t pixelCount = width * height;
+
+        size_t stridedImageDataSize = 0;
+        for (uint32_t c = 0; c < channelCount; ++c)
+        {
+            stridedImageDataSize = std::max(stridedImageDataSize, (size_t)(channelOffsets[c] + (pixelCount - 1) * channelStrides[c] + 1));
+        }
+
+        if (imageDataLength != stridedImageDataSize)
+        {
+            return mImpl->setLastError(Error::ArgumentError, "Image data size does not match specified dimensions, offset, and stride. (Expected: " + std::to_string(stridedImageDataSize) + ")");
+        }
+
+        return mImpl->sendMessage(msg, imageData, imageDataLength * sizeof(float));
     }
 
     Error Client::updateImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
@@ -593,16 +449,25 @@ namespace tevclient
             channelDescs = {{"R", 0, 4}, {"G", 1, 4}, {"B", 2, 4}, {"A", 3, 4}};
             break;
         default:
-            return mImpl->setLastError(Error::ImageError, "Image must have between 1 and 4 channels.");
+            return mImpl->setLastError(Error::ArgumentError, "Image must have between 1 and 4 channels.");
         }
         return updateImage(imageName, 0, 0, width, height, channelDescs, imageData, imageDataLength);
     }
 
     Error Client::vectorGraphics(std::string_view imageName, const VgCommand *commands, size_t commandCount, bool append, bool grabFocus)
     {
-        IpcPacket packet;
-        packet.setVectorGraphics(imageName, grabFocus, append, commands, commandCount);
-        return mImpl->send(packet);
+        OStream msg;
+        msg << EPacketType::VectorGraphics;
+        msg << grabFocus;
+        msg << imageName;
+        msg << append;
+        msg << static_cast<uint32_t>(commandCount);
+        for (size_t i = 0; i < commandCount; ++i)
+        {
+            msg << commands[i].type;
+            msg << commands[i].data;
+        }
+        return mImpl->sendMessage(msg);
     }
 
     Error Client::vectorGraphics(std::string_view imageName, const std::vector<VgCommand>& commands, bool append, bool grabFocus)
