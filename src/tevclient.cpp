@@ -1,3 +1,6 @@
+// This file was developed by Thomas Müller <thomas94@gmx.net> and Simon Kallweit <simon.kallweit@gmail.com>.
+// It is published under the BSD 3-Clause License within the LICENSE file.
+
 #include "tevclient.h"
 
 #include <algorithm>
@@ -108,21 +111,31 @@ public:
         return *this;
     }
 
-    OStream &operator<<(const std::string &var)
+    OStream &operator<<(const std::string &str)
     {
-        for (auto &&character : var)
+        for (auto c : str)
         {
-            *this << character;
+            *this << c;
         }
         *this << '\0';
         return *this;
     }
 
-    OStream &operator<<(std::string_view var)
+    OStream &operator<<(std::string_view str)
     {
-        for (auto &&character : var)
+        for (auto c : str)
         {
-            *this << character;
+            *this << c;
+        }
+        *this << '\0';
+        return *this;
+    }
+
+    OStream &operator<<(const char *str)
+    {
+        for (const char *c = str; *c != '\0'; ++c)
+        {
+            *this << *c;
         }
         *this << '\0';
         return *this;
@@ -320,7 +333,7 @@ Client::~Client()
     delete mImpl;
 }
 
-Error Client::openImage(std::string_view imagePath, std::string_view channelSelector, bool grabFocus)
+Error Client::openImage(const char *imagePath, const char *channelSelector, bool grabFocus)
 {
     OStream msg;
     msg << EPacketType::OpenImageV2;
@@ -330,7 +343,7 @@ Error Client::openImage(std::string_view imagePath, std::string_view channelSele
     return mImpl->sendMessage(msg);
 }
 
-Error Client::reloadImage(std::string_view imageName, bool grabFocus)
+Error Client::reloadImage(const char *imageName, bool grabFocus)
 {
     OStream msg;
     msg << EPacketType::ReloadImage;
@@ -339,7 +352,7 @@ Error Client::reloadImage(std::string_view imageName, bool grabFocus)
     return mImpl->sendMessage(msg);
 }
 
-Error Client::closeImage(std::string_view imageName)
+Error Client::closeImage(const char *imageName)
 {
     OStream msg;
     msg << EPacketType::CloseImage;
@@ -347,16 +360,28 @@ Error Client::closeImage(std::string_view imageName)
     return mImpl->sendMessage(msg);
 }
 
-Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height,
-                          const std::vector<std::string> &channelNames, bool grabFocus)
+Error Client::createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
+                          const char **channelNames, bool grabFocus)
 {
     if (width == 0 || height == 0)
     {
         return mImpl->setLastError(Error::ArgumentError, "Image width and height must be greater than 0.");
     }
-    if (channelNames.empty())
+    if (channelCount == 0)
     {
         return mImpl->setLastError(Error::ArgumentError, "Image must have at least one channel.");
+    }
+    if (channelCount > 4 && !channelNames)
+    {
+        return mImpl->setLastError(Error::ArgumentError,
+                                   "Channel names cannot be inferred for images with more than 4 channels.");
+    }
+
+    const char *defaultNames[] = {"R", "G", "B", "A"};
+
+    if (!channelNames)
+    {
+        channelNames = defaultNames;
     }
 
     OStream msg;
@@ -364,61 +389,44 @@ Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t h
     msg << grabFocus;
     msg << imageName;
     msg << width << height;
-    msg << static_cast<uint32_t>(channelNames.size());
-    msg << channelNames;
+    msg << channelCount;
+    for (uint32_t i = 0; i < channelCount; ++i)
+    {
+        msg << channelNames[i];
+    }
     return mImpl->sendMessage(msg);
 }
 
-Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                          bool grabFocus)
+Error Client::updateImage(const char *imageName, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                          uint32_t channelCount, const char **channelNames, uint64_t *channelOffsets,
+                          uint64_t *channelStrides, const float *imageData, size_t imageDataLength, bool grabFocus)
 {
-    std::vector<std::string> channelNames;
-    switch (channelCount)
-    {
-    case 1:
-        channelNames = {"R"};
-        break;
-    case 2:
-        channelNames = {"R", "G"};
-        break;
-    case 3:
-        channelNames = {"R", "G", "B"};
-        break;
-    case 4:
-        channelNames = {"R", "G", "B", "A"};
-        break;
-    default:
-        return mImpl->setLastError(Error::ArgumentError, "Image must have between 1 and 4 channels.");
-    }
-    return createImage(imageName, width, height, channelNames, grabFocus);
-}
-
-Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                          const float *imageData, size_t imageDataLength, bool grabFocus)
-{
-    RETURN_IF_FAILED(createImage(imageName, width, height, channelCount, grabFocus));
-    return updateImage(imageName, width, height, channelCount, imageData, imageDataLength, grabFocus);
-}
-
-Error Client::updateImage(std::string_view imageName, int32_t x, int32_t y, int32_t width, int32_t height,
-                          const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength,
-                          bool grabFocus)
-{
-    if (channelDescs.empty())
+    if (channelCount == 0)
     {
         return mImpl->setLastError(Error::ArgumentError, "Image must have at least one channel.");
     }
-
-    uint32_t channelCount = static_cast<uint32_t>(channelDescs.size());
-    std::vector<std::string> channelNames(channelCount);
-    std::vector<int64_t> channelOffsets(channelCount);
-    std::vector<int64_t> channelStrides(channelCount);
-
-    for (uint32_t i = 0; i < channelCount; ++i)
+    if (channelCount > 4 && (!channelNames || !channelOffsets || !channelStrides))
     {
-        channelNames[i] = channelDescs[i].name;
-        channelOffsets[i] = channelDescs[i].offset;
-        channelStrides[i] = channelDescs[i].stride;
+        return mImpl->setLastError(
+            Error::ArgumentError,
+            "Channel names/offsets/strides cannot be inferred for images with more than 4 channels.");
+    }
+
+    const char *defaultNames[] = {"R", "G", "B", "A"};
+    uint64_t defaultOffsets[] = {0, 1, 2, 3};
+    uint64_t defaultStrides[] = {channelCount, channelCount, channelCount, channelCount};
+
+    if (!channelNames)
+    {
+        channelNames = defaultNames;
+    }
+    if (!channelOffsets)
+    {
+        channelOffsets = defaultOffsets;
+    }
+    if (!channelStrides)
+    {
+        channelStrides = defaultStrides;
     }
 
     OStream msg;
@@ -426,18 +434,27 @@ Error Client::updateImage(std::string_view imageName, int32_t x, int32_t y, int3
     msg << grabFocus;
     msg << imageName;
     msg << channelCount;
-    msg << channelNames;
+    for (uint32_t i = 0; i < channelCount; ++i)
+    {
+        msg << channelNames[i];
+    }
     msg << x << y << width << height;
-    msg << channelOffsets;
-    msg << channelStrides;
+    for (uint32_t i = 0; i < channelCount; ++i)
+    {
+        msg << channelOffsets[i];
+    }
+    for (uint32_t i = 0; i < channelCount; ++i)
+    {
+        msg << channelStrides[i];
+    }
 
     size_t pixelCount = width * height;
 
     size_t stridedImageDataSize = 0;
-    for (uint32_t c = 0; c < channelCount; ++c)
+    for (uint32_t i = 0; i < channelCount; ++i)
     {
         stridedImageDataSize =
-            std::max(stridedImageDataSize, (size_t)(channelOffsets[c] + (pixelCount - 1) * channelStrides[c] + 1));
+            std::max(stridedImageDataSize, (size_t)(channelOffsets[i] + (pixelCount - 1) * channelStrides[i] + 1));
     }
 
     if (imageDataLength != stridedImageDataSize)
@@ -451,31 +468,15 @@ Error Client::updateImage(std::string_view imageName, int32_t x, int32_t y, int3
     return mImpl->sendMessage(msg, imageData, imageDataLength * sizeof(float));
 }
 
-Error Client::updateImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
+Error Client::createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
                           const float *imageData, size_t imageDataLength, bool grabFocus)
 {
-    std::vector<ChannelDesc> channelDescs;
-    switch (channelCount)
-    {
-    case 1:
-        channelDescs = {{"R", 0, 1}};
-        break;
-    case 2:
-        channelDescs = {{"R", 0, 2}, {"G", 1, 2}};
-        break;
-    case 3:
-        channelDescs = {{"R", 0, 3}, {"G", 1, 3}, {"B", 2, 3}};
-        break;
-    case 4:
-        channelDescs = {{"R", 0, 4}, {"G", 1, 4}, {"B", 2, 4}, {"A", 3, 4}};
-        break;
-    default:
-        return mImpl->setLastError(Error::ArgumentError, "Image must have between 1 and 4 channels.");
-    }
-    return updateImage(imageName, 0, 0, width, height, channelDescs, imageData, imageDataLength);
+    RETURN_IF_FAILED(createImage(imageName, width, height, channelCount, nullptr, grabFocus));
+    return updateImage(imageName, 0, 0, width, height, channelCount, nullptr, nullptr, nullptr, imageData,
+                       imageDataLength, grabFocus);
 }
 
-Error Client::vectorGraphics(std::string_view imageName, const VgCommand *commands, size_t commandCount, bool append,
+Error Client::vectorGraphics(const char *imageName, const VgCommand *commands, size_t commandCount, bool append,
                              bool grabFocus)
 {
     OStream msg;
@@ -492,27 +493,14 @@ Error Client::vectorGraphics(std::string_view imageName, const VgCommand *comman
     return mImpl->sendMessage(msg);
 }
 
-Error Client::vectorGraphics(std::string_view imageName, const std::vector<VgCommand> &commands, bool append,
-                             bool grabFocus)
-{
-    return vectorGraphics(imageName, commands.data(), commands.size(), append, grabFocus);
-}
-
-#ifdef TEVCLIENT_CPP20
-Error Client::vectorGraphics(std::string_view imageName, std::span<VgCommand> commands, bool append, bool grabFocus)
-{
-    return vectorGraphics(imageName, commands.data(), commands.size(), append, grabFocus);
-}
-#endif
-
 Error Client::lastError() const
 {
     return mImpl->lastError();
 }
 
-const std::string &Client::lastErrorString() const
+const char *Client::lastErrorString() const
 {
-    return mImpl->lastErrorString();
+    return mImpl->lastErrorString().c_str();
 }
 
 } // namespace tevclient

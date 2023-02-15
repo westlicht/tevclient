@@ -1,24 +1,15 @@
-// This file was developed by Thomas Müller <thomas94@gmx.net>.
+// This file was developed by Thomas Müller <thomas94@gmx.net> and Simon Kallweit <simon.kallweit@gmail.com>.
 // It is published under the BSD 3-Clause License within the LICENSE file.
 
 #pragma once
 
-#if __cplusplus >= 202002L
-#define TEVCLIENT_CPP20
-#endif
-
 #include <cstdint>
-#include <stdexcept>
-#include <string>
-#include <string_view>
 #include <vector>
-#ifdef TEVCLIENT_CPP20
-#include <span>
-#endif
 
 namespace tevclient
 {
 
+/// Vector graphics command.
 struct VgCommand
 {
     enum class EType : int8_t
@@ -71,7 +62,7 @@ struct VgCommand
     VgCommand() : type{EType::Invalid}
     {
     }
-    
+
     VgCommand(EType type, const std::vector<float> &data) : type{type}, data{data}
     {
     }
@@ -183,13 +174,7 @@ struct VgCommand
     std::vector<float> data;
 };
 
-struct ChannelDesc
-{
-    std::string name;
-    int64_t offset;
-    int64_t stride;
-};
-
+/// Error codes.
 enum class Error
 {
     Ok,
@@ -197,6 +182,12 @@ enum class Error
     ArgumentError,
 };
 
+/**
+ * @brief Class for communicating to the tev image viewer.
+ * 
+ * Communication is unidirectional (client -> tev server).
+ * All calls are blocking.
+ */
 class Client
 {
 public:
@@ -208,34 +199,115 @@ public:
     Client &operator=(const Client &) = delete;
     Client &operator=(Client &&) = delete;
 
-    Error openImage(std::string_view imagePath, std::string_view channelSelector = "", bool grabFocus = true);
-    Error reloadImage(std::string_view imageName, bool grabFocus = true);
-    Error closeImage(std::string_view imageName);
+    /**
+     * @brief Open an image from a file.
+     *
+     * @param imagePath Path to image.
+     * @param channelSelector Channel to select (optional).
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error openImage(const char *imagePath, const char *channelSelector = "", bool grabFocus = true);
 
-    Error createImage(std::string_view imageName, uint32_t width, uint32_t height,
-                      const std::vector<std::string> &channelNames, bool grabFocus = true);
-    Error createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                      bool grabFocus = true);
-    Error createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
+    /**
+     * @brief Reload an image.
+     *
+     * @param imageName Name of the image.
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error reloadImage(const char *imageName, bool grabFocus = true);
+
+    /**
+     * @brief Close an image.
+     *
+     * @param imageName Name of the image.
+     * @return Error::Ok if successful.
+     */
+    Error closeImage(const char *imageName);
+
+    /**
+     * @brief Create a new empty image.
+     *
+     * This creates a new empty image in tev that can then be updated using updateImage().
+     * If channel names are not provided they default to: R, G, B, A.
+     *
+     * @param imageName Name of the image.
+     * @param width Width in pixels.
+     * @param height Height in pixels.
+     * @param channelCount Number of channels.
+     * @param channelNames Channel names (optional if number of channels <= 4).
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
+                      const char **channelNames = nullptr, bool grabFocus = true);
+
+    /**
+     * @brief Update an existing image.
+     *
+     * This updates a region in a previously created image.
+     * If channel names are not provided they default to: R, G, B, A.
+     * If channel offsets are not provided they default to: 0, 1, 2, 3.
+     * If channel strides are not provided they default to: N, N, N, N where N is the number of channels.
+     *
+     * Note: Channel offsets and strides are given in number of floats (NOT number of bytes).
+     *
+     * @param imageName Name of the image.
+     * @param x X position of update region in pixels.
+     * @param y Y position of update region in pixels.
+     * @param width Width of update region in pixels.
+     * @param height Height of update region in pixels.
+     * @param channelCount Number of channels.
+     * @param channelNames Channel names (optional if number of channels <= 4).
+     * @param channelOffsets Channel offsets (optional if number of channels <= 4).
+     * @param channelStrides Channel strides (optional if number of channels <= 4).
+     * @param imageData Image data as array of floats.
+     * @param imageDataLength Number of elements (floats) in image data.
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error updateImage(const char *imageName, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                      uint32_t channelCount, const char **channelNames, uint64_t *channelOffsets,
+                      uint64_t *channelStrides, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+
+    /**
+     * @brief Create a new image.
+     *
+     * This is a convenience helper to create a new image and immediately update it.
+     * Image data is expected to be tightly packed.
+     *
+     * @param imageName Name of the image.
+     * @param width Width in pixels.
+     * @param height Height in pixels.
+     * @param channelCount Number of channels (must be <= 4).
+     * @param imageData Image data as array of floats.
+     * @param imageDataLength Number of elements (floats) in image data.
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
                       const float *imageData, size_t imageDataLength, bool grabFocus = true);
 
-    Error updateImage(std::string_view imageName, int32_t x, int32_t y, int32_t width, int32_t height,
-                      const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength,
-                      bool grabFocus = true);
-    Error updateImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                      const float *imageData, size_t imageDataLength, bool grabFocus = true);
+    /**
+     * @brief Draw vector graphics on top of an image.
+     * 
+     * @param imageName Name of the image.
+     * @param commands Array of commands.
+     * @param commandCount Number of elements in array of commands.
+     * @param append Append to existing vector graphics.
+     * @param grabFocus 
+     * @param grabFocus Bring the tev window to the front.
+     * @return Error::Ok if successful.
+     */
+    Error vectorGraphics(const char *imageName, const VgCommand *commands, size_t commandCount, bool append = true,
+                         bool grabFocus = true);
 
-    Error vectorGraphics(std::string_view imageName, const VgCommand *commands, size_t commandCount, bool append = true,
-                         bool grabFocus = true);
-    Error vectorGraphics(std::string_view imageName, const std::vector<VgCommand> &commands, bool append = true,
-                         bool grabFocus = true);
-#ifdef TEVCLIENT_CPP20
-    Error vectorGraphics(std::string_view imageName, std::span<VgCommand> commands, bool append = true,
-                         bool grabFocus = true);
-#endif
-
+    /// Return the last error.
     Error lastError() const;
-    const std::string &lastErrorString() const;
+
+    /// Return the last error as a string.
+    const char *lastErrorString() const;
 
 private:
     class Impl;

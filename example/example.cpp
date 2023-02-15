@@ -16,10 +16,7 @@ struct Image
 
     static Image checkerboard(uint32_t width, uint32_t height)
     {
-        Image img;
-        img.width = width;
-        img.height = height;
-        img.channels = 1;
+        Image img{width, height, 1};
         img.data.resize(width * height);
         for (uint32_t y = 0; y < height; ++y)
         {
@@ -27,6 +24,23 @@ struct Image
             {
                 float c = (((x >> 4) ^ (y >> 4)) & 1) ? 1.f : 0.f;
                 img.data[y * width + x] = c;
+            }
+        }
+        return img;
+    }
+
+    static Image uv_gradient(uint32_t width, uint32_t height)
+    {
+        Image img{width, height, 3};
+        img.data.resize(width * height * 3);
+        float *dst = img.data.data();
+        for (uint32_t y = 0; y < height; ++y)
+        {
+            for (uint32_t x = 0; x < width; ++x)
+            {
+                *dst++ = x / float(width);
+                *dst++ = y / float(height);
+                *dst++ = 0.f;
             }
         }
         return img;
@@ -66,43 +80,25 @@ int main()
     auto wait = []() { std::this_thread::sleep_for(std::chrono::seconds{1}); };
 
     std::cout << "Open image from " << test1 << std::endl;
-    check(client.openImage(test1.string()));
+    check(client.openImage(test1.string().c_str()));
     wait();
 
     std::cout << "Open image from " << test2 << std::endl;
-    check(client.openImage(test2.string()));
+    check(client.openImage(test2.string().c_str()));
     wait();
 
-    write_pfm(Image::checkerboard(512, 128), test1);
+    write_pfm(Image::uv_gradient(512, 128), test1);
 
     std::cout << "Reload image " << test1 << std::endl;
-    check(client.reloadImage(test1.string()));
+    check(client.reloadImage(test1.string().c_str()));
     wait();
 
     std::cout << "Close image " << test1 << std::endl;
-    check(client.closeImage(test1.string()));
+    check(client.closeImage(test1.string().c_str()));
     wait();
 
-    uint32_t width = 1024 * 2;
-    uint32_t height = 1024;
-
-    std::unique_ptr<float[]> pixels;
-    pixels.reset(new float[width * height * 3]);
-    float *dst = pixels.get();
-    for (uint32_t y = 0; y < height; ++y)
-    {
-        for (uint32_t x = 0; x < width; ++x)
-        {
-            *dst++ = x / float(width);
-            *dst++ = y / float(height);
-            *dst++ = 0.f;
-        }
-    }
-
-    if (client.createImage("test3", width, height, 3, pixels.get(), width * height * 3) != tevclient::Error::Ok)
-    {
-        std::cout << client.lastErrorString() << std::endl;
-    }
+    Image test3 = Image::uv_gradient(1024 * 2, 1024);
+    check(client.createImage("test3", test3.width, test3.height, test3.channels, test3.data.data(), test3.data.size()));
 
     return 0;
 }
