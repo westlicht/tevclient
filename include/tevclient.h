@@ -3,10 +3,19 @@
 
 #pragma once
 
+#if __cplusplus >= 202002L
+#define TEVCLIENT_CPP20
+#endif
+
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <cstdint>
+#ifdef TEVCLIENT_CPP20
+#include <span>
+#endif
+
 
 namespace tevclient
 {
@@ -42,10 +51,6 @@ namespace tevclient
         VgCommand() : type{EType::Invalid} {}
         VgCommand(EType type, const std::vector<float> &data) : type{type}, data{data}
         {
-            if (size() != data.size())
-            {
-                throw std::runtime_error{"VgCommand constructed with invalid amount of data"};
-            }
         }
 
         enum EWinding : int
@@ -66,65 +71,6 @@ namespace tevclient
         {
             float r, g, b, a;
         };
-
-        // Returns the expected (not actual) size of `data` in number of bytes, depending
-        // on the type of the command.
-        size_t bytes() const
-        {
-            switch (type)
-            {
-            case EType::Save:
-                return 0;
-            case EType::Restore:
-                return 0;
-            case EType::FillColor:
-                return sizeof(Color);
-            case EType::Fill:
-                return 0;
-            case EType::StrokeColor:
-                return sizeof(Color);
-            case EType::Stroke:
-                return 0;
-            case EType::BeginPath:
-                return 0;
-            case EType::ClosePath:
-                return 0;
-            case EType::PathWinding:
-                return sizeof(float);
-            case EType::DebugDumpPathCache:
-                return 0;
-            case EType::MoveTo:
-                return sizeof(Pos);
-            case EType::LineTo:
-                return sizeof(Pos);
-            case EType::ArcTo:
-                return sizeof(Pos) * 2 + sizeof(float) /* radius */;
-            case EType::Arc:
-                return sizeof(Pos) + sizeof(float) * 4 /* radius, 2 angles, winding */;
-            case EType::BezierTo:
-                return sizeof(Pos) * 3 /* 2 control points, end point */;
-            case EType::Circle:
-                return sizeof(Pos) + sizeof(float) /* radius */;
-            case EType::Ellipse:
-                return sizeof(Pos) + sizeof(Size);
-            case EType::QuadTo:
-                return sizeof(Pos) * 2 /* control point, end point */;
-            case EType::Rect:
-                return sizeof(Pos) + sizeof(Size);
-            case EType::RoundedRect:
-                return sizeof(Pos) + sizeof(Size) + sizeof(float) /* radius */;
-            case EType::RoundedRectVarying:
-                return sizeof(Pos) + sizeof(Size) + sizeof(float) * 4 /* radius per corner */;
-            default:
-                throw std::runtime_error{"Invalid VgCommand type."};
-            }
-        }
-
-        // Returns the expected size of `data` in number of floats, depending  on the type of the command.
-        size_t size() const
-        {
-            return bytes() / sizeof(float);
-        }
 
         static VgCommand save() { return {EType::Save, {}}; }
         static VgCommand restore() { return {EType::Restore, {}}; }
@@ -188,16 +134,22 @@ namespace tevclient
         Client &operator=(const Client &) = delete;
         Client &operator=(Client &&) = delete;
 
-        Error openImage(const std::string &imagePath, const std::string &channelSelector = "", bool grabFocus = true);
-        Error reloadImage(const std::string &imageName, bool grabFocus = true);
-        Error closeImage(const std::string &imageName);
+        Error openImage(std::string_view imagePath, std::string_view channelSelector = "", bool grabFocus = true);
+        Error reloadImage(std::string_view imageName, bool grabFocus = true);
+        Error closeImage(std::string_view imageName);
 
-        Error createImage(const std::string &imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus = true);
-        Error createImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus = true);
-        Error createImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+        Error createImage(std::string_view imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus = true);
+        Error createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus = true);
+        Error createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus = true);
 
-        Error updateImage(const std::string &imageName, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength, bool grabFocus = true);
-        Error updateImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+        Error updateImage(std::string_view imageName, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+        Error updateImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+
+        Error vectorGraphics(std::string_view imageName, const VgCommand *commands, size_t commandCount, bool append = true, bool grabFocus = true);  
+        Error vectorGraphics(std::string_view imageName, const std::vector<VgCommand>& commands, bool append = true, bool grabFocus = true);
+#ifdef TEVCLIENT_CPP20
+        Error vectorGraphics(std::string_view imageName, std::span<VgCommand> commands, bool append = true, bool grabFocus = true);
+#endif
 
         Error lastError() const;
         const std::string &lastErrorString() const;

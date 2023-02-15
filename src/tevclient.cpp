@@ -123,7 +123,7 @@ namespace tevclient
             return (EType)mPayload[4];
         }
 
-        void setOpenImage(const std::string &imagePath, const std::string &channelSelector, bool grabFocus)
+        void setOpenImage(std::string_view imagePath, std::string_view channelSelector, bool grabFocus)
         {
             OStream payload{mPayload};
             payload << EType::OpenImageV2;
@@ -132,7 +132,7 @@ namespace tevclient
             payload << channelSelector;
         }
 
-        void setReloadImage(const std::string &imageName, bool grabFocus)
+        void setReloadImage(std::string_view imageName, bool grabFocus)
         {
             OStream payload{mPayload};
             payload << EType::ReloadImage;
@@ -140,14 +140,14 @@ namespace tevclient
             payload << imageName;
         }
 
-        void setCloseImage(const std::string &imageName)
+        void setCloseImage(std::string_view imageName)
         {
             OStream payload{mPayload};
             payload << EType::CloseImage;
             payload << imageName;
         }
 
-        void setUpdateImage(const std::string &imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<float> &stridedImageData)
+        void setUpdateImage(std::string_view imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<float> &stridedImageData)
         {
             if (channelDescs.empty())
             {
@@ -192,7 +192,7 @@ namespace tevclient
             payload << stridedImageData;
         }
 
-        void setUpdateImage(const std::string &imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const float *imageData, size_t imageDataLength)
+        void setUpdateImage(std::string_view imageName, bool grabFocus, const std::vector<ChannelDesc> &channelDescs, int32_t x, int32_t y, int32_t width, int32_t height, const float *imageData, size_t imageDataLength)
         {
             if (channelDescs.empty())
             {
@@ -237,7 +237,7 @@ namespace tevclient
             payload.write(imageData, imageDataLength * sizeof(float));
         }
 
-        void setCreateImage(const std::string &imageName, bool grabFocus, int32_t width, int32_t height, int32_t nChannels, const std::vector<std::string> &channelNames)
+        void setCreateImage(std::string_view imageName, bool grabFocus, int32_t width, int32_t height, int32_t nChannels, const std::vector<std::string> &channelNames)
         {
             if ((int32_t)channelNames.size() != nChannels)
             {
@@ -253,18 +253,18 @@ namespace tevclient
             payload << channelNames;
         }
 
-        void setVectorGraphics(const std::string &imageName, bool grabFocus, bool append, const std::vector<VgCommand> &commands)
+        void setVectorGraphics(std::string_view imageName, bool grabFocus, bool append, const VgCommand *commands, size_t commandCount)
         {
             OStream payload{mPayload};
             payload << EType::VectorGraphics;
             payload << grabFocus;
             payload << imageName;
             payload << append;
-            payload << (int32_t)commands.size();
-            for (const auto &command : commands)
+            payload << (int32_t)commandCount;
+            for (size_t i = 0; i < commandCount; ++i)
             {
-                payload << command.type;
-                payload << command.data;
+                payload << commands[i].type;
+                payload << commands[i].data;
             }
         }
 
@@ -291,6 +291,16 @@ namespace tevclient
             }
 
             OStream &operator<<(const std::string &var)
+            {
+                for (auto &&character : var)
+                {
+                    *this << character;
+                }
+                *this << '\0';
+                return *this;
+            }
+
+            OStream &operator<<(std::string_view var)
             {
                 for (auto &&character : var)
                 {
@@ -489,28 +499,28 @@ namespace tevclient
         delete mImpl;
     }
 
-    Error Client::openImage(const std::string &imagePath, const std::string &channelSelector, bool grabFocus)
+    Error Client::openImage(std::string_view imagePath, std::string_view channelSelector, bool grabFocus)
     {
         IpcPacket packet;
         packet.setOpenImage(imagePath, channelSelector, grabFocus);
         return mImpl->send(packet);
     }
 
-    Error Client::reloadImage(const std::string &imageName, bool grabFocus)
+    Error Client::reloadImage(std::string_view imageName, bool grabFocus)
     {
         IpcPacket packet;
         packet.setReloadImage(imageName, grabFocus);
         return mImpl->send(packet);
     }
 
-    Error Client::closeImage(const std::string &imageName)
+    Error Client::closeImage(std::string_view imageName)
     {
         IpcPacket packet;
         packet.setCloseImage(imageName);
         return mImpl->send(packet);
     }
 
-    Error Client::createImage(const std::string &imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus)
+    Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, const std::vector<std::string> &channelNames, bool grabFocus)
     {
         if (width == 0 || height == 0)
         {
@@ -525,7 +535,7 @@ namespace tevclient
         return mImpl->send(packet);
     }
 
-    Error Client::createImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus)
+    Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, bool grabFocus)
     {
         std::vector<std::string> channelNames;
         switch (channelCount)
@@ -548,7 +558,7 @@ namespace tevclient
         return createImage(imageName, width, height, channelNames, grabFocus);
     }
 
-    Error Client::createImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
+    Error Client::createImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
     {
         Error error = createImage(imageName, width, height, channelCount, grabFocus);
         if (error != Error::Ok)
@@ -558,14 +568,14 @@ namespace tevclient
         return updateImage(imageName, width, height, channelCount, imageData, imageDataLength, grabFocus);
     }
 
-    Error Client::updateImage(const std::string &imageName, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength, bool grabFocus)
+    Error Client::updateImage(std::string_view imageName, int32_t x, int32_t y, int32_t width, int32_t height, const std::vector<ChannelDesc> &channelDescs, const float *imageData, size_t imageDataLength, bool grabFocus)
     {
         IpcPacket packet;
         packet.setUpdateImage(imageName, grabFocus, channelDescs, x, y, width, height, imageData, imageDataLength);
         return mImpl->send(packet);
     }
 
-    Error Client::updateImage(const std::string &imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
+    Error Client::updateImage(std::string_view imageName, uint32_t width, uint32_t height, uint32_t channelCount, const float *imageData, size_t imageDataLength, bool grabFocus)
     {
         std::vector<ChannelDesc> channelDescs;
         switch (channelCount)
@@ -587,6 +597,25 @@ namespace tevclient
         }
         return updateImage(imageName, 0, 0, width, height, channelDescs, imageData, imageDataLength);
     }
+
+    Error Client::vectorGraphics(std::string_view imageName, const VgCommand *commands, size_t commandCount, bool append, bool grabFocus)
+    {
+        IpcPacket packet;
+        packet.setVectorGraphics(imageName, grabFocus, append, commands, commandCount);
+        return mImpl->send(packet);
+    }
+
+    Error Client::vectorGraphics(std::string_view imageName, const std::vector<VgCommand>& commands, bool append, bool grabFocus)
+    {
+        return vectorGraphics(imageName, commands.data(), commands.size(), append, grabFocus);
+    }
+
+#ifdef TEVCLIENT_CPP20
+    Error Client::vectorGraphics(std::string_view imageName, std::span<VgCommand> commands, bool append, bool grabFocus)
+    {
+        return vectorGraphics(imageName, commands.data(), commands.size(), append, grabFocus);
+    }
+#endif
 
     Error Client::lastError() const { return mImpl->lastError(); }
 
