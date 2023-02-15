@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -184,7 +185,7 @@ enum class Error
 
 /**
  * @brief Class for communicating to the tev image viewer.
- * 
+ *
  * Communication is unidirectional (client -> tev server).
  * All calls are blocking.
  */
@@ -291,12 +292,12 @@ public:
 
     /**
      * @brief Draw vector graphics on top of an image.
-     * 
+     *
      * @param imageName Name of the image.
      * @param commands Array of commands.
      * @param commandCount Number of elements in array of commands.
      * @param append Append to existing vector graphics.
-     * @param grabFocus 
+     * @param grabFocus
      * @param grabFocus Bring the tev window to the front.
      * @return Error::Ok if successful.
      */
