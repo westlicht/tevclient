@@ -1,6 +1,4 @@
-https://github.com/westlicht/tevclient/workflows/CI/badge.svg
-
-# tevclient
+# tevclient &nbsp;&nbsp; ![](https://github.com/westlicht/tevclient/workflows/CI/badge.svg)
 
 This is a C++ library to remotly control the [tev image viewer](https://github.com/Tom94/tev). The code for this library is based on the original implementation in tev with some notable modifications:
 
