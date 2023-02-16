@@ -79,6 +79,9 @@ int main()
 
     auto wait = []() { std::this_thread::sleep_for(std::chrono::seconds{1}); };
 
+    std::cout << "Connecting to tev" << std::endl;
+    check(client.connect());
+
     std::cout << "Open image from " << test1 << std::endl;
     check(client.openImage(test1.string().c_str()));
     wait();
@@ -97,8 +100,12 @@ int main()
     check(client.closeImage(test1.string().c_str()));
     wait();
 
+    std::cout << "Create image" << std::endl;
     Image test3 = Image::uv_gradient(1024 * 2, 1024);
     check(client.createImage("test3", test3.width, test3.height, test3.channels, test3.data.data(), test3.data.size()));
+
+    std::cout << "Disconnecting from tev" << std::endl;
+    check(client.disconnect());
 
     return 0;
 }
