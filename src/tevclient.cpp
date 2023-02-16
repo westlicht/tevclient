@@ -203,64 +203,14 @@ public:
         }
     }
 
-    Error send(const void *data, size_t len)
-    {
-        if (!connected())
-        {
-            Error error = connect();
-            if (error != Error::Ok)
-            {
-                return error;
-            }
-        }
-
-        size_t bytesSent =
-            ::send(mSocketFd, reinterpret_cast<const char *>(data), static_cast<int>(len), 0 /* flags */);
-        if (bytesSent != len)
-        {
-            return setLastError(Error::SocketError, "socket send() failed: " + errorString(lastSocketError()));
-        }
-
-        return Error::Ok;
-    }
-
-    Error sendMessage(const OStream &header, const void *extraData = nullptr, size_t extraLen = 0)
-    {
-        uint32_t totalLen = static_cast<uint32_t>(4 + header.size() + extraLen);
-        RETURN_IF_FAILED(send(&totalLen, 4));
-        RETURN_IF_FAILED(send(header.data(), header.size()));
-        if (extraData)
-        {
-            RETURN_IF_FAILED(send(extraData, extraLen));
-        }
-        return Error::Ok;
-    }
-
-    Error setLastError(Error error, std::string errorString = "")
-    {
-        mLastError = error;
-        mLastErrorString = std::move(errorString);
-        return error;
-    }
-
-    Error lastError() const
-    {
-        return mLastError;
-    }
-    const std::string &lastErrorString() const
-    {
-        return mLastErrorString;
-    }
-
-private:
-    bool connected() const
+    bool isConnected() const
     {
         return mSocketFd != INVALID_SOCKET;
     }
 
     Error connect()
     {
-        if (connected())
+        if (isConnected())
         {
             return Error::Ok;
         }
@@ -304,7 +254,7 @@ private:
 
     Error disconnect()
     {
-        if (connected())
+        if (isConnected())
         {
             if (closeSocket(mSocketFd) == SOCKET_ERROR)
             {
@@ -315,6 +265,54 @@ private:
         return Error::Ok;
     }
 
+    Error send(const void *data, size_t len)
+    {
+        if (!isConnected())
+        {
+            return setLastError(Error::NotConnected, "Not connected");
+        }
+
+        size_t bytesSent =
+            ::send(mSocketFd, reinterpret_cast<const char *>(data), static_cast<int>(len), 0 /* flags */);
+        if (bytesSent != len)
+        {
+
+            return setLastError(Error::SocketError, "socket send() failed: " + errorString(lastSocketError()));
+        }
+
+        return Error::Ok;
+    }
+
+    Error sendMessage(const OStream &header, const void *extraData = nullptr, size_t extraLen = 0)
+    {
+        uint32_t totalLen = static_cast<uint32_t>(4 + header.size() + extraLen);
+        RETURN_IF_FAILED(send(&totalLen, 4));
+        RETURN_IF_FAILED(send(header.data(), header.size()));
+        if (extraData)
+        {
+            RETURN_IF_FAILED(send(extraData, extraLen));
+        }
+        return Error::Ok;
+    }
+
+    Error setLastError(Error error, std::string errorString = "")
+    {
+        mLastError = error;
+        mLastErrorString = std::move(errorString);
+        return error;
+    }
+
+    Error lastError() const
+    {
+        return mLastError;
+    }
+
+    const std::string &lastErrorString() const
+    {
+        return mLastErrorString;
+    }
+
+private:
     std::string mHostname;
     std::string mPort;
     socket_t mSocketFd{INVALID_SOCKET};
@@ -331,6 +329,21 @@ Client::Client(const char *hostname, uint16_t port)
 Client::~Client()
 {
     delete mImpl;
+}
+
+Error Client::connect()
+{
+    return mImpl->connect();
+}
+
+Error Client::disconnect()
+{
+    return mImpl->disconnect();
+}
+
+bool Client::isConnected() const
+{
+    return mImpl->isConnected();
 }
 
 Error Client::openImage(const char *imagePath, const char *channelSelector, bool grabFocus)
@@ -399,7 +412,7 @@ Error Client::createImage(const char *imageName, uint32_t width, uint32_t height
 
 Error Client::updateImage(const char *imageName, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                           uint32_t channelCount, const char **channelNames, uint64_t *channelOffsets,
-                          uint64_t *channelStrides, const float *imageData, size_t imageDataLength, bool grabFocus)
+                          uint64_t *channelStrides, const float *imageData, size_t imageDataCount, bool grabFocus)
 {
     if (channelCount == 0)
     {
@@ -450,30 +463,30 @@ Error Client::updateImage(const char *imageName, uint32_t x, uint32_t y, uint32_
 
     size_t pixelCount = width * height;
 
-    size_t stridedImageDataSize = 0;
+    size_t stridedImageDataCount = 0;
     for (uint32_t i = 0; i < channelCount; ++i)
     {
-        stridedImageDataSize =
-            std::max(stridedImageDataSize, (size_t)(channelOffsets[i] + (pixelCount - 1) * channelStrides[i] + 1));
+        stridedImageDataCount =
+            std::max(stridedImageDataCount, (size_t)(channelOffsets[i] + (pixelCount - 1) * channelStrides[i] + 1));
     }
 
-    if (imageDataLength != stridedImageDataSize)
+    if (imageDataCount != stridedImageDataCount)
     {
         return mImpl->setLastError(
             Error::ArgumentError,
             "Image data size does not match specified dimensions, offset, and stride. (Expected: " +
-                std::to_string(stridedImageDataSize) + ")");
+                std::to_string(stridedImageDataCount) + ")");
     }
 
-    return mImpl->sendMessage(msg, imageData, imageDataLength * sizeof(float));
+    return mImpl->sendMessage(msg, imageData, imageDataCount * sizeof(float));
 }
 
 Error Client::createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                          const float *imageData, size_t imageDataLength, bool grabFocus)
+                          const float *imageData, size_t imageDataCount, bool grabFocus)
 {
     RETURN_IF_FAILED(createImage(imageName, width, height, channelCount, nullptr, grabFocus));
     return updateImage(imageName, 0, 0, width, height, channelCount, nullptr, nullptr, nullptr, imageData,
-                       imageDataLength, grabFocus);
+                       imageDataCount, grabFocus);
 }
 
 Error Client::vectorGraphics(const char *imageName, const VgCommand *commands, size_t commandCount, bool append,

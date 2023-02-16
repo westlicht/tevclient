@@ -179,20 +179,35 @@ struct VgCommand
 enum class Error
 {
     Ok,
+    NotConnected,
     SocketError,
     ArgumentError,
 };
 
 /**
- * @brief Class for communicating to the tev image viewer.
+ * @brief Class for remotely controlling the tev image viewer.
  *
  * Communication is unidirectional (client -> tev server).
- * All calls are blocking.
+ * The API is not thread-safe and all calls are blocking.
+ *
+ * Note that a connection is not automatically established.
+ * Before sending any commands, the connection needs to be
+ * opened using connect().
  */
 class Client
 {
 public:
+    /**
+     * @brief Constructor.
+     *
+     * Note that the connection is not established automatically.
+     * You need to call connect() to open the connection.
+     *
+     * @param hostname Hostname
+     * @param port Port
+     */
     Client(const char *hostname = "127.0.0.1", uint16_t port = 14158);
+
     ~Client();
 
     Client(const Client &) = delete;
@@ -201,11 +216,28 @@ public:
     Client &operator=(Client &&) = delete;
 
     /**
+     * @brief Connect to tev.
+     *
+     * @return Error::Ok if succesful.
+     */
+    Error connect();
+
+    /**
+     * @brief Disconnect from tev.
+     *
+     * @return Error::Ok if successful.
+     */
+    Error disconnect();
+
+    /// Return true if connected.
+    bool isConnected() const;
+
+    /**
      * @brief Open an image from a file.
      *
      * @param imagePath Path to image.
      * @param channelSelector Channel to select (optional).
-     * @param grabFocus Bring the tev window to the front.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error openImage(const char *imagePath, const char *channelSelector = "", bool grabFocus = true);
@@ -214,7 +246,7 @@ public:
      * @brief Reload an image.
      *
      * @param imageName Name of the image.
-     * @param grabFocus Bring the tev window to the front.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error reloadImage(const char *imageName, bool grabFocus = true);
@@ -238,7 +270,7 @@ public:
      * @param height Height in pixels.
      * @param channelCount Number of channels.
      * @param channelNames Channel names (optional if number of channels <= 4).
-     * @param grabFocus Bring the tev window to the front.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
@@ -264,13 +296,13 @@ public:
      * @param channelOffsets Channel offsets (optional if number of channels <= 4).
      * @param channelStrides Channel strides (optional if number of channels <= 4).
      * @param imageData Image data as array of floats.
-     * @param imageDataLength Number of elements (floats) in image data.
-     * @param grabFocus Bring the tev window to the front.
+     * @param imageDataCount Number of elements (floats) in image data.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error updateImage(const char *imageName, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                       uint32_t channelCount, const char **channelNames, uint64_t *channelOffsets,
-                      uint64_t *channelStrides, const float *imageData, size_t imageDataLength, bool grabFocus = true);
+                      uint64_t *channelStrides, const float *imageData, size_t imageDataCount, bool grabFocus = true);
 
     /**
      * @brief Create a new image.
@@ -283,12 +315,12 @@ public:
      * @param height Height in pixels.
      * @param channelCount Number of channels (must be <= 4).
      * @param imageData Image data as array of floats.
-     * @param imageDataLength Number of elements (floats) in image data.
-     * @param grabFocus Bring the tev window to the front.
+     * @param imageDataCount Number of elements (floats) in image data.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error createImage(const char *imageName, uint32_t width, uint32_t height, uint32_t channelCount,
-                      const float *imageData, size_t imageDataLength, bool grabFocus = true);
+                      const float *imageData, size_t imageDataCount, bool grabFocus = true);
 
     /**
      * @brief Draw vector graphics on top of an image.
@@ -298,7 +330,7 @@ public:
      * @param commandCount Number of elements in array of commands.
      * @param append Append to existing vector graphics.
      * @param grabFocus
-     * @param grabFocus Bring the tev window to the front.
+     * @param grabFocus Select the image in tev.
      * @return Error::Ok if successful.
      */
     Error vectorGraphics(const char *imageName, const VgCommand *commands, size_t commandCount, bool append = true,
