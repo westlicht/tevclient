@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace tevclient
 {
@@ -60,119 +59,141 @@ struct VgCommand
         float r, g, b, a;
     };
 
-    VgCommand() : type{EType::Invalid}
+    VgCommand() = default;
+
+    VgCommand(EType type) : type(type)
     {
     }
 
-    VgCommand(EType type, const std::vector<float> &data) : type{type}, data{data}
+    template <size_t N> VgCommand(EType type, const float (&data)[N]) : type(type), dataCount(N)
     {
+        static_assert(N <= MaxPayload, "Payload too large");
+        for (size_t i = 0; i < N; ++i)
+            this->data[i] = data[i];
     }
 
     static VgCommand save()
     {
-        return {EType::Save, {}};
+        return {EType::Save};
     }
 
     static VgCommand restore()
     {
-        return {EType::Restore, {}};
+        return {EType::Restore};
     }
 
     static VgCommand fillColor(const Color &c)
     {
-        return {EType::FillColor, {c.r, c.g, c.b, c.a}};
+        float data[4] = {c.r, c.g, c.b, c.a};
+        return {EType::FillColor, data};
     }
 
     static VgCommand fill()
     {
-        return {EType::Fill, {}};
+        return {EType::Fill};
     }
 
     static VgCommand strokeColor(const Color &c)
     {
-        return {EType::StrokeColor, {c.r, c.g, c.b, c.a}};
+        float data[4] = {c.r, c.g, c.b, c.a};
+        return {EType::StrokeColor, data};
     }
 
     static VgCommand stroke()
     {
-        return {EType::Stroke, {}};
+        return {EType::Stroke};
     }
 
     static VgCommand beginPath()
     {
-        return {EType::BeginPath, {}};
+        return {EType::BeginPath};
     }
 
     static VgCommand closePath()
     {
-        return {EType::ClosePath, {}};
+        return {EType::ClosePath};
     }
 
     static VgCommand pathWinding(EWinding winding)
     {
-        return {EType::PathWinding, {(float)(int)winding}};
+        float data[1] = {(float)(int)winding};
+        return {EType::PathWinding, data};
     }
 
     static VgCommand moveTo(const Pos &p)
     {
-        return {EType::MoveTo, {p.x, p.y}};
+        float data[2] = {p.x, p.y};
+        return {EType::MoveTo, data};
     }
 
     static VgCommand lineTo(const Pos &p)
     {
-        return {EType::LineTo, {p.x, p.y}};
+        float data[2] = {p.x, p.y};
+        return {EType::LineTo, data};
     }
 
     static VgCommand arcTo(const Pos &p1, const Pos &p2, float radius)
     {
-        return {EType::ArcTo, {p1.x, p1.y, p2.x, p2.y, radius}};
+        float data[5] = {p1.x, p1.y, p2.x, p2.y, radius};
+        return {EType::ArcTo, data};
     }
 
     static VgCommand arc(const Pos &center, float radius, float angle_begin, float angle_end, EWinding winding)
     {
-        return {EType::Arc, {center.x, center.y, radius, angle_begin, angle_end, (float)(int)winding}};
+        float data[6] = {center.x, center.y, radius, angle_begin, angle_end, (float)(int)winding};
+        return {EType::Arc, data};
     }
 
     static VgCommand bezierTo(const Pos &c1, const Pos &c2, const Pos &p)
     {
-        return {EType::BezierTo, {c1.x, c1.y, c2.x, c2.y, p.x, p.y}};
+        float data[6] = {c1.x, c1.y, c2.x, c2.y, p.x, p.y};
+        return {EType::BezierTo, data};
     }
 
     static VgCommand circle(const Pos &center, float radius)
     {
-        return {EType::Circle, {center.x, center.y, radius}};
+        float data[3] = {center.x, center.y, radius};
+        return {EType::Circle, data};
     }
 
     static VgCommand ellipse(const Pos &center, const Size &radius)
     {
-        return {EType::Ellipse, {center.x, center.y, radius.width, radius.height}};
+        float data[4] = {center.x, center.y, radius.width, radius.height};
+        return {EType::Ellipse, data};
     }
 
     static VgCommand quadTo(const Pos &c, const Pos &p)
     {
-        return {EType::QuadTo, {c.x, c.y, p.x, p.y}};
+        float data[4] = {c.x, c.y, p.x, p.y};
+        return {EType::QuadTo, data};
     }
 
     static VgCommand rect(const Pos &p, const Size &size)
     {
-        return {EType::Rect, {p.x, p.y, size.width, size.height}};
+        float data[4] = {p.x, p.y, size.width, size.height};
+        return {EType::Rect, data};
     }
 
     static VgCommand roundedRect(const Pos &p, const Size &size, float radius)
     {
-        return {EType::RoundedRect, {p.x, p.y, size.width, size.height, radius}};
+        float data[5] = {p.x, p.y, size.width, size.height, radius};
+        return {EType::RoundedRect, data};
     }
 
     static VgCommand roundedRectVarying(const Pos &p, const Size &size, float radiusTopLeft, float radiusTopRight,
                                         float radiusBottomRight, float radiusBottomLeft)
     {
-        return {
-            EType::RoundedRectVarying,
-            {p.x, p.y, size.width, size.height, radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft}};
+        float data[8] = {
+            p.x, p.y, size.width, size.height, radiusTopLeft, radiusTopRight, radiusBottomRight, radiusBottomLeft,
+        };
+        return {EType::RoundedRectVarying, data};
     }
 
-    EType type;
-    std::vector<float> data;
+    static constexpr size_t MaxPayload = 8;
+
+    EType type{EType::Invalid};
+    uint8_t dataCount{0};
+    float data[MaxPayload];
 };
 
 /// Error codes.

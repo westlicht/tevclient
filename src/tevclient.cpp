@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -29,8 +30,11 @@ using socket_t = int;
 #endif
 
 #define RETURN_IF_FAILED(call)                                                                                         \
-    if (tevclient::Error error = call; error != tevclient::Error::Ok)                                                  \
-        return error;
+    {                                                                                                                  \
+        tevclient::Error error = call;                                                                                 \
+        if (error != tevclient::Error::Ok)                                                                             \
+            return error;                                                                                              \
+    }
 
 namespace tevclient
 {
@@ -501,7 +505,8 @@ Error Client::vectorGraphics(const char *imageName, const VgCommand *commands, s
     for (size_t i = 0; i < commandCount; ++i)
     {
         msg << commands[i].type;
-        msg << commands[i].data;
+        for (size_t j = 0; j < commands[i].dataCount; ++j)
+            msg << commands[i].data[j];
     }
     return mImpl->sendMessage(msg);
 }
