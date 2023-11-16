@@ -1,6 +1,6 @@
 # tevclient &nbsp;&nbsp; ![](https://github.com/westlicht/tevclient/workflows/CI/badge.svg)
 
-This is a C++17 library to remotly control the [tev image viewer](https://github.com/Tom94/tev). The code for this library is based on the original implementation in tev with some notable modifications:
+This is a C++11 library to remotly control the [tev image viewer](https://github.com/Tom94/tev). The code for this library is based on the original implementation in tev with some notable modifications:
 
 - C-style interface for passing data instead of using STL containers
 - Zero copy when sending image data
