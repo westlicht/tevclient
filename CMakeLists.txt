@@ -26,3 +26,6 @@ if(PROJECT_IS_TOP_LEVEL)
         target_compile_definitions(example PRIVATE _CRT_SECURE_NO_WARNINGS)
     endif()
 endif()
+
+install(FILES include/tevclient.h DESTINATION include)
+install(TARGETS tevclient DESTINATION lib)
