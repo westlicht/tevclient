@@ -125,16 +125,6 @@ public:
         return *this;
     }
 
-    OStream &operator<<(std::string_view str)
-    {
-        for (auto c : str)
-        {
-            *this << c;
-        }
-        *this << '\0';
-        return *this;
-    }
-
     OStream &operator<<(const char *str)
     {
         for (const char *c = str; *c != '\0'; ++c)
