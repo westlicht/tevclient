@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -163,6 +164,9 @@ private:
 };
 
 static std::atomic<uint32_t> sInstanceCount{0};
+#ifdef _WIN32
+static std::mutex sInstanceMutex;
+#endif
 
 class Client::Impl
 {
@@ -172,6 +176,7 @@ public:
         if (sInstanceCount++ == 0)
         {
 #ifdef _WIN32
+            std::lock_guard<std::mutex> lock(sInstanceMutex);
             WSADATA wsaData;
             int wsaStartupResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
             if (wsaStartupResult != NO_ERROR)
@@ -192,6 +197,7 @@ public:
         if (sInstanceCount-- == 1)
         {
 #ifdef _WIN32
+            std::lock_guard<std::mutex> lock(sInstanceMutex);
             WSACleanup();
 #endif
         }
