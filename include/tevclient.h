@@ -206,6 +206,25 @@ enum class Error
 };
 
 /**
+ * @brief Initialize the tev client library.
+ *
+ * This is optional as each Client will implicitly initialize
+ * the library if not already done. This function is provided
+ * to allow for more control over global initialization.
+ * The number of calls to initialize() and shutdown() must match.
+ * Only the first call to initialize() will have an effect.
+ *
+ * @param error If not nullptr, will be set to an error message if initialization fails.
+ * @return True if successful.
+ */
+bool initialize(const char **error = nullptr);
+
+/**
+ * @brief Shutdown the tev client library.
+ */
+void shutdown();
+
+/**
  * @brief Class for remotely controlling the tev image viewer.
  *
  * Communication is unidirectional (client -> tev server).
@@ -235,6 +254,9 @@ public:
     Client(Client &&) = delete;
     Client &operator=(const Client &) = delete;
     Client &operator=(Client &&) = delete;
+
+    const char *getHostname() const;
+    uint16_t getPort() const;
 
     /**
      * @brief Connect to tev.

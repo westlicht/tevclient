@@ -164,43 +164,71 @@ private:
 };
 
 static std::atomic<uint32_t> sInstanceCount{0};
+static std::string sInitError;
 #ifdef _WIN32
 static std::mutex sInstanceMutex;
 #endif
 
+static bool internalInitialize(const char **error = nullptr)
+{
+    if (sInstanceCount++ == 0)
+    {
+#ifdef _WIN32
+        std::lock_guard<std::mutex> lock(sInstanceMutex);
+        WSADATA wsaData;
+        int wsaStartupResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (wsaStartupResult != NO_ERROR)
+        {
+            sInitError = errorString(wsaStartupResult);
+            if (error)
+                *error = sInitError.c_str();
+            return false;
+        }
+#else
+        // We don't care about getting a SIGPIPE if the display server goes away...
+        signal(SIGPIPE, SIG_IGN);
+#endif
+    }
+    return true;
+}
+
+static void internalShutdown()
+{
+    if (sInstanceCount-- == 1)
+    {
+#ifdef _WIN32
+        std::lock_guard<std::mutex> lock(sInstanceMutex);
+        WSACleanup();
+#endif
+    }
+}
+
 class Client::Impl
 {
 public:
-    Impl(const char *hostname, uint16_t port) : mHostname{hostname}, mPort{std::to_string(port)}
+    Impl(const char *hostname, uint16_t port) : mHostname{hostname}, mPort{port}
     {
-        if (sInstanceCount++ == 0)
+        const char *error;
+        if (!internalInitialize(&error))
         {
-#ifdef _WIN32
-            std::lock_guard<std::mutex> lock(sInstanceMutex);
-            WSADATA wsaData;
-            int wsaStartupResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-            if (wsaStartupResult != NO_ERROR)
-            {
-                setLastError(Error::SocketError, "Could not initialize WSA: " + errorString(wsaStartupResult));
-            }
-#else
-            // We don't care about getting a SIGPIPE if the display server goes away...
-            signal(SIGPIPE, SIG_IGN);
-#endif
+            setLastError(Error::SocketError, std::string("Failed to initialize: ") + error);
         }
     }
 
     ~Impl()
     {
         disconnect();
+        internalShutdown();
+    }
 
-        if (sInstanceCount-- == 1)
-        {
-#ifdef _WIN32
-            std::lock_guard<std::mutex> lock(sInstanceMutex);
-            WSACleanup();
-#endif
-        }
+    const std::string &getHostname() const
+    {
+        return mHostname;
+    }
+
+    uint16_t getPort() const
+    {
+        return mPort;
     }
 
     bool isConnected() const
@@ -218,7 +246,7 @@ public:
         struct addrinfo hints = {}, *addrinfo;
         hints.ai_family = PF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
-        int err = getaddrinfo(mHostname.c_str(), mPort.c_str(), &hints, &addrinfo);
+        int err = getaddrinfo(mHostname.c_str(), std::to_string(mPort).c_str(), &hints, &addrinfo);
         if (err != 0)
         {
             return setLastError(Error::SocketError, "getaddrinfo() failed: " + std::string(gai_strerror(err)));
@@ -314,12 +342,22 @@ public:
 
 private:
     std::string mHostname;
-    std::string mPort;
+    uint16_t mPort;
     socket_t mSocketFd{INVALID_SOCKET};
 
     Error mLastError{Error::Ok};
     std::string mLastErrorString;
 };
+
+bool initialize()
+{
+    return internalInitialize();
+}
+
+void shutdown()
+{
+    internalShutdown();
+}
 
 Client::Client(const char *hostname, uint16_t port)
 {
@@ -329,6 +367,16 @@ Client::Client(const char *hostname, uint16_t port)
 Client::~Client()
 {
     delete mImpl;
+}
+
+const char *Client::getHostname() const
+{
+    return mImpl->getHostname().c_str();
+}
+
+uint16_t Client::getPort() const
+{
+    return mImpl->getPort();
 }
 
 Error Client::connect()
