@@ -349,9 +349,9 @@ private:
     std::string mLastErrorString;
 };
 
-bool initialize()
+bool initialize(const char **error)
 {
-    return internalInitialize();
+    return internalInitialize(error);
 }
 
 void shutdown()
