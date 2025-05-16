@@ -52,9 +52,9 @@ inline std::string errorString(int error)
 #else
     std::string result{strerror(error)};
 #endif
-    auto pos = result.find_last_not_of("/r/n");
-    if (pos != std::string::npos)
-        result = result.substr(0, pos + 1);
+    // Remove trailing newlines
+    while (result.size() > 0 && (result.back() == '\n' || result.back() == '\r'))
+        result.pop_back();
 
     result += " (" + std::to_string(error) + ")";
     return result;
