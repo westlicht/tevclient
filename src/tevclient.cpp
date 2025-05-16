@@ -54,7 +54,7 @@ inline std::string errorString(int error)
 #endif
     auto pos = result.find_last_not_of("/r/n");
     if (pos != std::string::npos)
-        result = result.substr(0, pos - 1);
+        result = result.substr(0, pos + 1);
 
     result += " (" + std::to_string(error) + ")";
     return result;
